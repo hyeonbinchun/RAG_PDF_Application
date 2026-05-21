@@ -19,12 +19,13 @@ class QdrantStorage:
     
     def search(self, query_vector, top_k: int = 5):
         # Search for similar vectors in the collection(database)
-        results = self.client.search(
+        response = self.client.query_points(
             collection_name=self.collection,
-            query_vector=query_vector,
+            query=query_vector,
             with_payload=True,
             limit=top_k
         )
+        results = response.points
         
         # Extract contexts and sources from the search results
         contexts = []
@@ -38,4 +39,3 @@ class QdrantStorage:
                 sources.add(source)
 
         return {"contexts": contexts, "sources": list(sources)}
-    
