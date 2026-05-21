@@ -52,7 +52,7 @@ async def rag_ingest_pdf(ctx: inngest.Context):
 
 @inngest_client.create_function(
     fn_id="RAG: Query PDF",   
-    trigger=inngest.TriggerEvent(event="rag/query_pdf"),
+    trigger=inngest.TriggerEvent(event="rag/query_pdf_ai"),
 )
 async def rag_query_pdf_ai(ctx: inngest.Context):
     # Embed the question and search for relevant contexts in the vector db
