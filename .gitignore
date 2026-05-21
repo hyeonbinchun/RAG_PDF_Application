@@ -1,4 +1,10 @@
-.env
-*.pyc
+# Virtual environments
+.venv/
+
+# Python
 __pycache__/
+
+# Environment / secrets
+.env
+
 qdrant_storage/
