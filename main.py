@@ -50,7 +50,58 @@ async def rag_ingest_pdf(ctx: inngest.Context):
     return ingested.model_dump()
 
 
+@inngest_client.create_function(
+    fn_id="RAG: Query PDF",   
+    trigger=inngest.TriggerEvent(event="rag/query_pdf"),
+)
+async def rag_query_pdf_ai(ctx: inngest.Context):
+    # Embed the question and search for relevant contexts in the vector db
+    def _search(question: str, top_k: int=5):
+        query_vec = embed_texts([question])[0]
+        store = QdrantStorage()
+        found = store.search(query_vec, top_k)
+        return RAGSearchResult(contexts=found["contexts"], sources=found["sources"])
+    
+    # Extract the question and top_k from the event data
+    question = ctx.event.data["question"]
+    top_k = ctx.event.data.get("top_k", 5)
+    found = await ctx.step.run("embed-and-search", lambda: _search(question, top_k), output_type=RAGSearchResult)
+
+    # Create a prompt for the LLM using the retrieved contexts and the question
+    context_block = "\n\n".join(f"- {c}" for c in found.contexts)
+    user_content = (
+        "Use the following context to answer the question. \n\n"
+        f"Context:\n{context_block}\n\n"
+        f"Question: {question}\n"
+        "Answer concisely using the context above."
+    )
+
+    adapter = ai.openai.Adapter(
+        auth_key=os.getenv("OPENAI_API_KEY"),
+        model="gpt-4o-mini"
+    )
+
+    # Call the LLM to get an answer based on the question and retrieved contexts
+    res = await ctx.step.ai.infer(
+        "llm-answer",
+        adapter=adapter,
+        body={
+            "max_tokens": 1024,
+            "temperature": 0.2,
+            "messages": [
+                {"role": "system", "content": "You answer questions using only the provided context."},
+                {"role": "user", "content": user_content}
+            ]
+        }
+    )
+
+    # Extract the answer from the LLM response and return it along with the sources and number of contexts used
+    answer = res["choices"][0]["message"]["content"].strip()
+    return {"answer": answer, "sources": found.sources, "num_contexts": len(found.contexts)}
+    
+
+
 app = FastAPI()
 
 
-inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf])
+inngest.fast_api.serve(app, inngest_client, [rag_ingest_pdf, rag_query_pdf_ai])
