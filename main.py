@@ -23,6 +23,12 @@ inngest_client = inngest.Inngest(
 @inngest_client.create_function(
     fn_id="RAG: Ingest PDF",   
     trigger=inngest.TriggerEvent(event="rag/ingest_pdf"),
+    throttle=inngest.Throttle(limit=3, period=datetime.timedelta(minutes=1)),
+    rate_limit=inngest.RateLimit(
+        limit=1,
+        period=datetime.timedelta(hours=4),
+        key="event.data.source_id"  # Rate limit based on the source_id to prevent overloading from the same PDF
+    ),
 )
 
 async def rag_ingest_pdf(ctx: inngest.Context):
