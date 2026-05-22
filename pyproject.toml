@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.136.1",
     "inngest>=0.5.18",
     "llama-index-readers-file>=0.6.0",
+    "mcp[cli]>=1.27.1",
     "openai>=2.37.0",
     "python-dotenv>=1.2.2",
     "qdrant-client>=1.18.0",
