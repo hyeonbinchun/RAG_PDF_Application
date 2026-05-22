@@ -1,21 +1,69 @@
 from mcp.server.fastmcp import FastMCP
+import os
 
 # Create an MCP server
-mcp = FastMCP("Demo", json_response=True)
+mcp = FastMCP("AI Sticky Notes")
 
-# Add an addition tool
+NOTES_FILE = os.path.join(os.path.dirname(__file__), "notes.txt")
+
+def ensure_file():
+    if not os.path.exists(NOTES_FILE):
+        with open(NOTES_FILE, "w") as f:
+            f.write("")
+
 @mcp.tool()
-def add(a: int, b: int) -> int:
-    """Add two numbers"""
-    return a + b
+def add_note(message: str) -> str:
+    """
+    Append a new note to the sticky note file.
+    Args:
+        message(str): The note content to be added.
+    return:
+        str: Confirmation message indicating the note was saved.
+    """
+    ensure_file()
+    with open(NOTES_FILE, "a") as f:
+        f.write(message + "\n")
+    return "Note saved!"
 
+@mcp.tool()
+def read_notes() -> str:
+    """
+    Read and return all notes from the sticky note file.
 
-# Add a dynamic greeting resource
-@mcp.resource("greeting://{name}")
-def get_greeting(name: str) -> str:
-    """Get a personalized greeting"""
-    return f"Hello, {name}!"
+    return:
+        str: All notes as a single string separated by line breaks.
+            If no notes exist, a default message is returned.
+    """
+    ensure_file()
+    with open(NOTES_FILE, "r") as f:
+        content = f.read().strip()
+    return content or "No notes yet."
 
-if __name__ == "__main__":
-    mcp.run()
-    
+@mcp.resource("notes://latest")
+def get_latest_note() -> str:
+    """
+    Get the most recently added note from the sticky note file.
+
+    Return:
+        str: The latest note entry. If no notes exist, a default message is returned.
+    """
+    ensure_file()
+    with open(NOTES_FILE, "r") as f:
+        lines = f.readlines()
+    return lines[-1].strip() if lines else "No notes yet."
+
+@mcp.prompt()
+def note_summary_prompt() -> str:
+    """
+    Generate a prompt asking the AI to summarize all current notes.
+
+    Returns:
+        str: A prompt string that includes all notes and ask for a summary.
+            if no notes exist, a message will be shown indicating that.
+    """
+    ensure_file()
+    with open(NOTES_FILE, "r") as f:
+        content = f.read().strip()
+    if not content:
+        return "There are no notes yet."
+    return f"Summarize the current notes: {content}"
