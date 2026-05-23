@@ -28,11 +28,14 @@ Streamlit UI  →  Inngest Events  →  FastAPI + Inngest Functions
 ## Project Structure
 
 ```
-├── main.py            # FastAPI app + Inngest function definitions
-├── data_loader.py     # PDF loading, chunking, and OpenAI embedding
-├── vector_db.py       # Qdrant client wrapper (upsert + search)
-├── custom_types.py    # Pydantic models for inter-step data
-└── streamlit_app.py   # Streamlit frontend (upload + Q&A)
+├── main.py               # FastAPI app + Inngest function definitions
+├── data_loader.py        # PDF loading, chunking, and OpenAI embedding
+├── vector_db.py          # Qdrant client wrapper (upsert + search)
+├── custom_types.py       # Pydantic models for inter-step data
+├── frontend/
+│   └── app.py            # Streamlit frontend (upload + Q&A)
+└── mcp_server/
+     └── server.py         # MCP server tools
 ```
 
 ---
@@ -82,7 +85,7 @@ uv run uvicorn main:app
 
 In a separate terminal, start the Streamlit frontend:
 ```bash
-streamlit run streamlit_app.py
+streamlit run frontend/app.py
 ```
 
 Then open [http://localhost:8501](http://localhost:8501) in your browser.

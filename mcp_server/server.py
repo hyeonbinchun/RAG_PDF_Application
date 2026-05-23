@@ -1,20 +1,22 @@
 from mcp.server.fastmcp import FastMCP
 import os
 import fnmatch
-import subprocess
+from pathlib import Path
 
 # Create an MCP server
-mcp = FastMCP("AI Sticky Notes")
+mcp = FastMCP("Filesystem & Notes MCP")
 
-NOTES_FILE = os.path.join(os.path.dirname(__file__), "notes.txt")
+NOTES_FILE = Path(__file__).resolve().parent.parent / "notes.txt"
+
 
 def ensure_file():
-    if not os.path.exists(NOTES_FILE):
-        with open(NOTES_FILE, "w") as f:
-            f.write("")
+    if not NOTES_FILE.exists():
+        NOTES_FILE.write_text("")
+
 
 # Safety: restrict access to files only within a specific directory
 ALLOWED_ROOT = os.path.expanduser("/Users/hyeonbinchun/Documents")
+
 
 def _safe_path(path: str)->str:
     """Resolve and validate that path stays inside ALLOWED_ROOT."""
@@ -38,7 +40,7 @@ def add_note(message: str) -> str:
         str: Confirmation message indicating the note was saved.
     """
     ensure_file()
-    with open(NOTES_FILE, "a") as f:
+    with NOTES_FILE.open("a") as f:
         f.write(message + "\n")
     return "Note saved!"
 
@@ -52,7 +54,7 @@ def read_notes() -> str:
             If no notes exist, a default message is returned.
     """
     ensure_file()
-    with open(NOTES_FILE, "r") as f:
+    with NOTES_FILE.open("r") as f:
         content = f.read().strip()
     return content or "No notes yet."
 
@@ -274,9 +276,10 @@ def get_latest_note() -> str:
         str: The latest note entry. If no notes exist, a default message is returned.
     """
     ensure_file()
-    with open(NOTES_FILE, "r") as f:
+    with NOTES_FILE.open("r") as f:
         lines = f.readlines()
     return lines[-1].strip() if lines else "No notes yet."
+
 
 @mcp.prompt()
 def note_summary_prompt() -> str:
@@ -288,7 +291,7 @@ def note_summary_prompt() -> str:
             if no notes exist, a message will be shown indicating that.
     """
     ensure_file()
-    with open(NOTES_FILE, "r") as f:
+    with NOTES_FILE.open("r") as f:
         content = f.read().strip()
     if not content:
         return "There are no notes yet."
@@ -305,4 +308,3 @@ def _human_size(n: int) -> str:
             return f"{n:.0f} {unit}"
         n /= 1024
     return f"{n:.1f} TB"
-    
