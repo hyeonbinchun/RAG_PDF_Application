@@ -1,10 +1,24 @@
+"""
+Filesystem MCP Server
+
+All file operations are sandboxed inside ALLOWED_ROOT.
+Paths passed to tools can be relative to ALLOWED_ROOT OR absolute system paths 
+as long as they reside inside ALLOWED_ROOT.
+
+Examples:
+- "" or "." → root
+- "projects/report.pdf" → valid
+- "/Users/hyeonbinchun/Documents/projects/report.pdf" → valid (absolute)
+- "/etc/passwd" → not allowed (will be rejected)
+"""
+
 from mcp.server.fastmcp import FastMCP
 import os
 import fnmatch
 from pathlib import Path
 
 # Create an MCP server
-mcp = FastMCP("Filesystem & Notes MCP")
+mcp = FastMCP("Filesystem MCP")
 
 NOTES_FILE = Path(__file__).resolve().parent.parent / "notes.txt"
 
@@ -17,88 +31,64 @@ def ensure_file():
 # Safety: restrict access to files only within a specific directory
 ALLOWED_ROOT = os.path.expanduser("/Users/hyeonbinchun/Documents")
 
-
 def _safe_path(path: str)->str:
     """Resolve and validate that path stays inside ALLOWED_ROOT."""
-    resolved = os.path.realpath(os.path.expanduser(path))
-    if not resolved.startswith(os.path.realpath(ALLOWED_ROOT)):
+    # Expand user first (~ format) so isabs check handles it accurately
+    expanded = os.path.expanduser(path)
+    
+    if not os.path.isabs(expanded):
+        expanded = os.path.join(ALLOWED_ROOT, expanded)  # anchor relative paths
+        
+    resolved = os.path.realpath(expanded)
+    root = os.path.realpath(ALLOWED_ROOT)
+    
+    if os.path.commonpath([resolved, root]) != root:
         raise PermissionError(
             f"Access denied: '{path}' is outside the allowed root '{ALLOWED_ROOT}'"
         )
     return resolved
 
-
-# ── Sticky Notes tools ────────────────────────────────────────────────────────
-
-@mcp.tool()
-def add_note(message: str) -> str:
-    """
-    Append a new note to the sticky note file.
-    Args:
-        message(str): The note content to be added.
-    return:
-        str: Confirmation message indicating the note was saved.
-    """
-    ensure_file()
-    with NOTES_FILE.open("a") as f:
-        f.write(message + "\n")
-    return "Note saved!"
-
-@mcp.tool()
-def read_notes() -> str:
-    """
-    Read and return all notes from the sticky note file.
-
-    return:
-        str: All notes as a single string separated by line breaks.
-            If no notes exist, a default message is returned.
-    """
-    ensure_file()
-    with NOTES_FILE.open("r") as f:
-        content = f.read().strip()
-    return content or "No notes yet."
-
 # ── Filesystem tools ──────────────────────────────────────────────────────────
 
 @mcp.tool()
-def list_directory(path: str = "~") -> str:
-    """ 
-    List the conents of a directory.
-       Args:
-        path (str): Absolute or ~ path to list. Defaults to home directory.
- 
+def list_directory(path: str) -> str:
+    """
+    List the contents of a directory.
+
+    Args:
+        path: Path relative to ALLOWED_ROOT.
+        Use "" or "." for root.
+
     Returns:
-        str: A formatted directory listing showing files and sub-folders.
+        One entry per line, prefixed with 'dir:' or 'file:' and file size.
     """
     safe = _safe_path(path)
     if not os.path.isdir(safe):
-        return f"'{path}' is not a directory."
+        return f"'{path}' is not a directory or cannot be accessed."
     entries = sorted(os.scandir(safe), key=lambda e: (not e.is_dir(), e.name.lower()))
-    lines = [f"📁  {safe}", ""]
+    lines = [safe, ""]
     for e in entries:
-        if e.is_dir():
-            lines.append(f"  📂  {e.name}/")
-        else:
-            size = e.stat().st_size
-            lines.append(f"  📄  {e.name}  ({_human_size(size)})")
+        prefix = "dir: " if e.is_dir() else "file:"
+        size = f"  ({_human_size(e.stat().st_size)})" if e.is_file() else ""
+        lines.append(f"  {prefix}  {e.name}{size}")
     return "\n".join(lines)
  
 
 @mcp.tool()
-def read_file(path: str, max_chars: int = 8000) -> str:
+def read_text_file(path: str, max_chars: int = 8000) -> str:
     """
-    Read a plain-text file (txt, md, py, json, csv, …) and return its contents.
+    Read a plain-text file (.txt, .md, .py, .json, and .csv).
  
     Args:
-        path     (str): Absolute or ~ path to the file.
-        max_chars(int): Maximum characters to return (default 8 000).
- 
+        path: Path relative to ALLOWED_ROOT.
+        max_chars: Maximum characters to return (default 8000).
+
     Returns:
-        str: The file's text content, truncated if it exceeds max_chars.
+        The file's text content, truncated with a notice if it exceeds max_chars.
     """
     safe = _safe_path(path)
     if not os.path.isfile(safe):
-        return f"File not found: '{path}'"
+        return f"File not found or cannot be accessed: '{path}'"
  
     with open(safe, "r", errors="replace") as f:
         content = f.read(max_chars)
@@ -111,18 +101,18 @@ def read_file(path: str, max_chars: int = 8000) -> str:
 @mcp.tool()
 def read_pdf(path: str, max_pages: int = 10) -> str:
     """
-    Extract text from a PDF file using pdfminer / pypdf.
- 
+    Extract text from a PDF file using pypdf or pdfminer.
+
     Args:
-        path     (str): Absolute or ~ path to the PDF.
-        max_pages(int): Maximum number of pages to extract (default 10).
- 
+        path: Path relative to ALLOWED_ROOT.
+        max_pages: Maximum number of pages to extract (default 10).
+
     Returns:
-        str: Extracted text from the PDF.
+        Extracted text, with a page count note if the file exceeds max_pages.
     """
     safe = _safe_path(path)
     if not os.path.isfile(safe):
-        return f"File not found: '{path}'"
+        return f"File not found or cannot be accessed: '{path}'"
  
     # Try pypdf first (usually installed), fall back to pdfminer
     try:
@@ -145,21 +135,22 @@ def read_pdf(path: str, max_pages: int = 10) -> str:
             "Neither 'pypdf' nor 'pdfminer.six' is installed. "
             "Run: pip install pypdf  or  pip install pdfminer.six"
         )
-    
+
+
 @mcp.tool()
 def read_docx(path: str) -> str:
     """
     Extract text from a Word (.docx) file.
- 
+
     Args:
-        path (str): Absolute or ~ path to the .docx file.
- 
+        path: Path relative to ALLOWED_ROOT.
+
     Returns:
-        str: The full text content of the document.
+        Paragraphs joined by blank lines, or a message if the document is empty.
     """
     safe = _safe_path(path)
     if not os.path.isfile(safe):
-        return f"File not found: '{path}'"
+        return f"File not found or cannot be accessed: '{path}'"
  
     try:
         from docx import Document
@@ -171,17 +162,17 @@ def read_docx(path: str) -> str:
  
  
 @mcp.tool()
-def find_files(name_pattern: str, search_path: str = "~", max_results: int = 20) -> str:
+def find_files(name_pattern: str, search_path: str="", max_results: int = 20) -> str:
     """
-    Search for files whose names match a wildcard pattern (e.g. '*resume*', '*.pdf').
- 
+    Find files by name using a wildcard pattern (e.g. '*.pdf', 'report_*').
+
     Args:
-        name_pattern (str): Shell glob pattern to match filenames.
-        search_path  (str): Directory to search in (default: home directory).
-        max_results  (int): Maximum number of results to return (default 20).
- 
+        name_pattern: Shell glob pattern to match against filenames.
+        search_path: Path relative to ALLOWED_ROOT.
+        max_results: Maximum number of results to return (default 20).
+
     Returns:
-        str: Newline-separated list of matching file paths.
+        Newline-separated list of matching file paths.
     """
     safe = _safe_path(search_path)
     matches = []
@@ -199,18 +190,18 @@ def find_files(name_pattern: str, search_path: str = "~", max_results: int = 20)
  
  
 @mcp.tool()
-def grep_files(search_term: str, search_path: str = "~", file_pattern: str = "*", max_results: int = 20) -> str:
+def grep_files(search_term: str, search_path: str="", file_pattern: str = "*", max_results: int = 20) -> str:
     """
-    Search for a text string inside files (like the 'grep' command).
- 
+    Search for text inside files (like the grep command).
+
     Args:
-        search_term  (str): Text to search for (case-insensitive).
-        search_path  (str): Directory to search in (default: home directory).
-        file_pattern (str): Only search files matching this glob (e.g. '*.txt', '*.md').
-        max_results  (int): Maximum number of matching lines to return (default 20).
- 
+        search_term: Text to search for (case-insensitive).
+        search_path: Path relative to ALLOWED_ROOT.
+        file_pattern: Only search files matching this glob (e.g. '*.txt', '*.md').
+        max_results: Maximum number of matching lines to return (default 20).
+
     Returns:
-        str: Lines that contain the search term, with their file paths.
+        Matching lines in 'filepath:lineno: content' format.
     """
     safe = _safe_path(search_path)
     results = []
@@ -237,17 +228,17 @@ def grep_files(search_term: str, search_path: str = "~", file_pattern: str = "*"
 @mcp.tool()
 def get_file_info(path: str) -> str:
     """
-    Return metadata about a file or directory (size, type, dates).
- 
+    Return metadata about a file or directory.
+
     Args:
-        path (str): Absolute or ~ path to the file or directory.
- 
+        path: Path relative to ALLOWED_ROOT.
+
     Returns:
-        str: Human-readable file metadata.
+        Path, type, size, modified/created timestamps, and file extension if applicable.
     """
     safe = _safe_path(path)
     if not os.path.exists(safe):
-        return f"Path not found: '{path}'"
+        return f"Path not found or cannot be accessed: '{path}'"
  
     stat = os.stat(safe)
     import datetime
@@ -267,41 +258,19 @@ def get_file_info(path: str) -> str:
         lines.append(f"Extension : {ext or '(none)'}")
     return "\n".join(lines)
  
-@mcp.resource("notes://latest")
-def get_latest_note() -> str:
-    """
-    Get the most recently added note from the sticky note file.
-
-    Return:
-        str: The latest note entry. If no notes exist, a default message is returned.
-    """
-    ensure_file()
-    with NOTES_FILE.open("r") as f:
-        lines = f.readlines()
-    return lines[-1].strip() if lines else "No notes yet."
-
 
 @mcp.prompt()
-def note_summary_prompt() -> str:
-    """
-    Generate a prompt asking the AI to summarize all current notes.
+def usage_policy() -> str:
+    """Ground rules for using this MCP server."""
+    return (
+       "You have access to a filesystem MCP server rooted at the user's Documents folder. "
+        "ALWAYS use the MCP tools to find and read files — never use bash or Python to access files. "
+        "Paths can be relative to the Documents root (e.g. 'projects/report.docx') OR full absolute paths. "
+        "When the user asks about a file, first call find_files to locate it, then read it with "
+        "the appropriate read tool (read_pdf, read_docx, or read_text_file)."
+    )
 
-    Returns:
-        str: A prompt string that includes all notes and ask for a summary.
-            if no notes exist, a message will be shown indicating that.
-    """
-    ensure_file()
-    with NOTES_FILE.open("r") as f:
-        content = f.read().strip()
-    if not content:
-        return "There are no notes yet."
-    return f"Summarize the current notes: {content}"
-
-
- 
- 
-# ── Helpers ───────────────────────────────────────────────────────────────────
- 
+# ── Helpers ─────────────────────────────────────────────────────────────────── 
 def _human_size(n: int) -> str:
     for unit in ("B", "KB", "MB", "GB"):
         if n < 1024:
